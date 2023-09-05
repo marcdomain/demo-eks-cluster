@@ -79,11 +79,11 @@ jobs:
           aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Apply Ingress Controller
+      - name: Apply k8s Manifests
         run: |
           aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.CLUSTER_NAME }} --kubeconfig kubeconfig
           export KUBECONFIG="./kubeconfig"
-          kubectl apply -f k8s/manifests
+          kubectl apply -f k8s/manifest-files
 
   triggerServices:
     name: TRIGGER SERVICES PIPELINE
