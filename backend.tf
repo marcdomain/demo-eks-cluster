@@ -5,6 +5,5 @@ terraform {
     region         = "eu-central-1"
     encrypt        = true
     dynamodb_table = "marcus-eks-infra-state-lock"
-    profile        = "self"
   }
 }

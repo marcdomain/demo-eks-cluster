@@ -49,7 +49,8 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -var-file tf_envs/$(terraform workspace show).tfvars -out tf.tfplan
+        run: |
+          terraform plan -var-file tf_envs/${{ steps.check_env.outputs.ENVIRONMENT }}.tfvars -out tf.tfplan -input=false
         continue-on-error: true
 
       - name: Terraform Plan Status
@@ -58,13 +59,14 @@ jobs:
 
       - name: Apply Infrastructure Changes
         if: github.ref == 'refs/heads/main' || 'refs/heads/production' && github.event_name == 'push'
-        run: terraform apply -var-file tf_envs/$(terraform workspace show).tfvars "tf.tfplan"
+        run: |
+          terraform apply -var-file tf_envs/${{ steps.check_env.outputs.ENVIRONMENT }}.tfvars "tf.tfplan"
 
   applyManifests:
     name: APPLY MANIFESTS
     needs: terraform-infra-setup
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' || 'refs/heads/production' && github.event_name == 'push'
 
     steps:
       - name: Checkout
@@ -79,7 +81,8 @@ jobs:
 
       - name: Apply Ingress Controller
         run: |
-          aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.CLUSTER_NAME }}
+          aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.CLUSTER_NAME }} --kubeconfig kubeconfig
+          export KUBECONFIG="./kubeconfig"
           kubectl apply -f k8s/manifests
 
   triggerServices:
@@ -94,7 +97,7 @@ jobs:
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: 'marcdomain',
-              repo: '.......',
+              repo: 'reverse-ip-service',
               workflow_id: 'pipeline.yml',
               ref: 'main'
             })
