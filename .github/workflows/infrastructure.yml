@@ -84,20 +84,3 @@ jobs:
           aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.CLUSTER_NAME }} --kubeconfig kubeconfig
           export KUBECONFIG="./kubeconfig"
           kubectl apply -f k8s/manifest-files
-
-  triggerServices:
-    name: TRIGGER SERVICES PIPELINE
-    runs-on: ubuntu-latest
-    needs: applyManifests
-    steps:
-      - name: Trigger reverse-ip-service pipeline
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ env.GITHUB_ACCESS_TOKEN }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: 'marcdomain',
-              repo: 'reverse-ip-service',
-              workflow_id: 'pipeline.yml',
-              ref: 'main'
-            })
