@@ -60,7 +60,7 @@ jobs:
       - name: Apply Infrastructure Changes
         if: github.ref == 'refs/heads/main' || 'refs/heads/production' && github.event_name == 'push'
         run: |
-          terraform apply -var-file tf_envs/${{ steps.check_env.outputs.ENVIRONMENT }}.tfvars "tf.tfplan"
+          terraform apply -input=false -auto-approve "tf.tfplan"
 
   applyManifests:
     name: APPLY MANIFESTS
