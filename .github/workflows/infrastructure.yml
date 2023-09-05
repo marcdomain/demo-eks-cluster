@@ -1,0 +1,100 @@
+name: "EKS Cluster Pipeline"
+
+on:
+  pull_request:
+  push:
+    branches: [ main, production ]
+
+env:
+  AWS_REGION: 'eu-central-1'
+  CLUSTER_NAME: 'marcus-eks-cluster'
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_KEY }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET }}
+  GITHUB_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+
+jobs:
+  terraform-infra-setup:
+    name: PROVISION EKS CLUSTER
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set Environment Variable
+        id: check_env
+        run: |
+          if [[ $REF == 'refs/heads/production' ]]
+          then
+            echo "::set-output name=ENVIRONMENT::production"
+          else
+            echo "::set-output name=ENVIRONMENT::dev"
+          fi
+        env:
+          REF: ${{ github.ref }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 1.5.6
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Set Terraform Workspace
+        id: set_workspace
+        run: |
+          terraform workspace select ${{ steps.check_env.outputs.ENVIRONMENT }} || terraform workspace new ${{ steps.check_env.outputs.ENVIRONMENT }}
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -var-file tf_envs/$(terraform workspace show).tfvars -out tf.tfplan
+        continue-on-error: true
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Apply Infrastructure Changes
+        if: github.ref == 'refs/heads/main' || 'refs/heads/production' && github.event_name == 'push'
+        run: terraform apply -var-file tf_envs/$(terraform workspace show).tfvars "tf.tfplan"
+
+  applyManifests:
+    name: APPLY MANIFESTS
+    needs: terraform-infra-setup
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Apply Ingress Controller
+        run: |
+          aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.CLUSTER_NAME }}
+          kubectl apply -f k8s/manifests
+
+  triggerServices:
+    name: TRIGGER SERVICES PIPELINE
+    runs-on: ubuntu-latest
+    needs: applyManifests
+    steps:
+      - name: Trigger reverse-ip-service pipeline
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ env.GITHUB_ACCESS_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'marcdomain',
+              repo: '.......',
+              workflow_id: 'pipeline.yml',
+              ref: 'main'
+            })
