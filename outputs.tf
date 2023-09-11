@@ -1,3 +1,7 @@
+output "aws_account_number" {
+  value = var.aws_account_number
+}
+
 output "cluster_name" {
   value = aws_eks_cluster.cluster.name
 }

@@ -10,28 +10,24 @@ env:
   CLUSTER_NAME: 'marcus-eks-cluster'
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_KEY }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET }}
-  GITHUB_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
 
 jobs:
   terraform-infra-setup:
     name: PROVISION EKS CLUSTER
     runs-on: ubuntu-latest
+    outputs:
+      CURRENT_ENVIRONMENT: ${{ steps.envVars.outputs.ENVIRONMENT }}
+      AWS_ACCOUNT_ID: ${{ steps.envVars.outputs.aws_account_number }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
       - name: Set Environment Variable
-        id: check_env
-        run: |
-          if [[ $REF == 'refs/heads/production' ]]
-          then
-            echo "::set-output name=ENVIRONMENT::production"
-          else
-            echo "::set-output name=ENVIRONMENT::dev"
-          fi
-        env:
-          REF: ${{ github.ref }}
+        uses: marcdomain/set-variables@v1
+        with:
+          variables: |
+            ENVIRONMENT: "${{ github.ref }}" == "refs/heads/main" ? "dev" : "production"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
@@ -45,12 +41,12 @@ jobs:
       - name: Set Terraform Workspace
         id: set_workspace
         run: |
-          terraform workspace select ${{ steps.check_env.outputs.ENVIRONMENT }} || terraform workspace new ${{ steps.check_env.outputs.ENVIRONMENT }}
+          terraform workspace select ${{ env.ENVIRONMENT }} || terraform workspace new ${{ env.ENVIRONMENT }}
 
       - name: Terraform Plan
         id: plan
         run: |
-          terraform plan -var-file tf_envs/${{ steps.check_env.outputs.ENVIRONMENT }}.tfvars -out tf.tfplan -input=false
+          terraform plan -var-file tf_envs/${{ env.ENVIRONMENT }}.tfvars -out tf.tfplan -input=false
         continue-on-error: true
 
       - name: Terraform Plan Status
@@ -61,6 +57,12 @@ jobs:
         if: github.ref == 'refs/heads/main' || 'refs/heads/production' && github.event_name == 'push'
         run: |
           terraform apply -input=false -auto-approve "tf.tfplan"
+
+      - name: Export Output Variables
+        id: envVars
+        run: |
+          echo "$(terraform output | sed 's/ //g' | sed 's/ /\n/g')" >> "$GITHUB_OUTPUT"
+          echo "ENVIRONMENT=${{ env.environment }}" >> "$GITHUB_OUTPUT"
 
   applyManifests:
     name: APPLY MANIFESTS
